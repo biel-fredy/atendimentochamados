@@ -1,0 +1,113 @@
+	public Resultado consultar(EntidadeDominio entidade) {
+		Resultado resultado = new Resultado();
+		Connection conn = null;
+		Statement st = null;
+		ResultSet resultadosQuery = null;
+		List<EntidadeDominio> lista = new ArrayList<EntidadeDominio>();
+
+		try {
+			String sqlQuery;
+			Class<? extends EntidadeDominio> classeDoObjeto = entidade.getClass();
+			Class<?> sprClasseDoObjeto = classeDoObjeto.getSuperclass();
+
+			ManipuladorSQL sqlManipulado = new ManipuladorSQL();
+			sqlManipulado = ManipuladorAtributos.GeraSqlManipulado(entidade);
+
+			sqlQuery = sqlManipulado.montaSqlSelect();
+
+			System.out.println(sqlQuery);
+
+			conn = DB.getConnection();
+			st = conn.createStatement();
+
+			resultadosQuery = st.executeQuery(sqlQuery);
+			int numeroColunas = resultadosQuery.getMetaData().getColumnCount();
+
+			while (resultadosQuery.next()) {
+				Object obj = classeDoObjeto.getConstructor().newInstance();
+				int coluna = 1;
+				for (int i = 1; i <= numeroColunas; i++) {
+					if (coluna <= sprClasseDoObjeto.getDeclaredFields().length) {
+						for (Field atributoEntidadeDominio : sprClasseDoObjeto.getDeclaredFields()) {
+							atributoEntidadeDominio.setAccessible(true);
+							atributoEntidadeDominio.set(obj, resultadosQuery.getObject(coluna++));
+							atributoEntidadeDominio.setAccessible(false);
+						}
+					} else {
+						for (Field atributo : classeDoObjeto.getDeclaredFields()) {
+							if (coluna <= sqlManipulado.getMapColunasCampos().size()) {
+								MuitosPraUm muitosPraUm = atributo.getDeclaredAnnotation(MuitosPraUm.class);
+								UmPraMuitos umPraMuitos = atributo.getDeclaredAnnotation(UmPraMuitos.class);
+								atributo.setAccessible(true);
+								if (muitosPraUm != null) {
+									Object campoEntidade = atributo.getType().getConstructor().newInstance();
+									int id = (int) resultadosQuery.getObject(coluna++);
+									Method setId = campoEntidade.getClass().getSuperclass().getDeclaredMethod("setId",
+											Integer.class);
+									setId.invoke(campoEntidade, id);
+									List<EntidadeDominio> listaCampo = consultar((EntidadeDominio) campoEntidade)
+											.getResultadoLista();
+									if (!listaCampo.isEmpty()) {
+										campoEntidade = listaCampo.get(0);
+									}
+									atributo.set(obj, campoEntidade);
+								} 
+								else if (umPraMuitos != null) {
+									ParameterizedType tipoLista = (ParameterizedType)atributo.getGenericType();
+									Class<? extends EntidadeDominio> classeTipoLista = (Class<? extends EntidadeDominio>) tipoLista.getActualTypeArguments()[0];
+									Object campoEntidade = classeTipoLista.getConstructor().newInstance();
+									List<EntidadeDominio> listaEntidades = consultar((EntidadeDominio) campoEntidade).getResultadoLista();
+									atributo.set(obj, listaEntidades);
+									coluna++;
+								} else if (atributo.getType().isEnum()) {
+									Method valueOf = atributo.getType().getMethod("valueOf", String.class);
+									Object value = valueOf.invoke(null, resultadosQuery.getObject(coluna++));
+									atributo.set(obj, value);
+								} else {
+									atributo.set(obj, resultadosQuery.getObject(coluna++));
+								}
+								atributo.setAccessible(false);
+							}
+						}
+					}
+				}
+				lista.add((EntidadeDominio) obj);
+			}
+
+			resultado.setMensagem("Foram encontrados " + lista.size() + " objetos.");
+		} catch (IllegalArgumentException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} catch (SecurityException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} catch (InstantiationException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} catch (IllegalAccessException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} catch (InvocationTargetException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} catch (NoSuchMethodException e) {
+			e.printStackTrace();
+			resultado.setMensagem("Falha ao buscar o cadastro. Contate o administrador do sistema.");
+			return resultado;
+		} finally {
+			DB.closeResultSet(resultadosQuery);
+			DB.closeStatement(st);
+			// DB.closeConnection();
+		}
+
+		return resultado;
+	}
